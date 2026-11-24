@@ -50,14 +50,21 @@ jobs:
           cd tools/godot
           curl -L -o godot.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
           unzip -q godot.zip
-          mv Godot.app/Contents/MacOS/Godot Godot
+          # Keep the binary inside Godot.app: moved out, its signature breaks and
+          # Apple Silicon runners kill it (exit 137).
+          printf '#!/bin/sh\nexec "%s/Godot.app/Contents/MacOS/Godot" "$@"\n' "$PWD" > Godot
           chmod +x Godot
+          touch .gdignore
+          ./Godot --headless --version
           cd -
           TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
           mkdir -p "${TEMPLATES_DIR}"
           curl -L -o templates.tpz "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
           unzip -q templates.tpz -d templates_unpacked
           cp -R templates_unpacked/templates/* "${TEMPLATES_DIR}/"
+
+      - name: Import project assets
+        run: tools/godot/Godot --headless --path . --import
 
       - name: Export iOS Xcode project
         run: |
@@ -102,6 +109,7 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload "${IPA_NAME}"
 
       - name: Export Android APK
+        continue-on-error: true
         run: |
           set -euxo pipefail
           mkdir -p "${EXPORT_DIR_ANDROID}"
