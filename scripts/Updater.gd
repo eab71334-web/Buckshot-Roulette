@@ -50,7 +50,7 @@ func _ApplyPending():
 	DirAccess.remove_absolute(PATCH)
 	if (DirAccess.rename_absolute(PENDING, PATCH) == OK):
 		_Set("number", number)
-		_Set("trying", false)
+		_Set("tries", 0)
 		_Set("good", false)
 	_Set("pending", 0)
 
@@ -58,11 +58,11 @@ func _Mount():
 	var number : int = _Get("number", 0)
 	if (number == 0 || !FileAccess.file_exists(PATCH)): return
 	# the app was reinstalled with a different base: the old patch no longer fits
-	# "trying" still set means the last start with this patch never reached the menu
-	if (_Get("base", BASE) != BASE || (_Get("trying", false) && !_Get("good", false))):
+	# two starts that never reached a working menu mean the patch is broken
+	if (_Get("base", BASE) != BASE || (!_Get("good", false) && _Get("tries", 0) >= 2)):
 		_Discard(number)
 		return
-	if (!_Get("good", false)): _Set("trying", true)
+	if (!_Get("good", false)): _Set("tries", _Get("tries", 0) + 1)
 	if (ProjectSettings.load_resource_pack(ProjectSettings.globalize_path(PATCH), true)):
 		installed = number
 	else:
@@ -72,7 +72,6 @@ func _Discard(number : int):
 	DirAccess.remove_absolute(PATCH)
 	_Set("bad", number)
 	_Set("number", 0)
-	_Set("trying", false)
 	_Set("good", false)
 
 func _ready():
@@ -86,18 +85,21 @@ func _process(delta):
 	var scene = get_tree().current_scene
 	var in_menu : bool = scene != null && scene.scene_file_path == MENU_SCENE
 	# the patch is trusted once the menu has run for a few seconds
-	if (!_confirmed && in_menu):
+	if (!_confirmed && in_menu && _MenuWorks(scene)):
 		_healthy_time += delta
 		if (_healthy_time > 3.0):
 			_confirmed = true
 			if (installed > 0):
 				_Set("good", true)
-				_Set("trying", false)
 			_ShowVersion(scene)
 	if (_downloading && _label != null):
 		var total = int(_remote.get("size", 0))
 		if (total > 0):
 			_label.text = "DOWNLOADING  " + str(min(99, int(_http.get_downloaded_bytes() * 100.0 / total))) + "%"
+
+func _MenuWorks(scene : Node) -> bool:
+	var manager = scene.get_node_or_null("standalone managers/menu manager")
+	return manager != null && manager.has_method("Show")
 
 func _ShowVersion(scene : Node):
 	var label = scene.get_node_or_null("Camera/dialogue UI/menu ui/main screen/version")
